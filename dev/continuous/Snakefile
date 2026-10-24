@@ -1,0 +1,65 @@
+from pathlib import Path
+import csv
+
+CAMPAIGN = str(Path(config["campaign"]).resolve())
+with open(f"{CAMPAIGN}/paths.txt") as handle:
+    paths = handle.read().splitlines()
+SOURCE = paths[1]
+RSCRIPT = paths[5]
+MANIFEST = f"{CAMPAIGN}/manifest.csv"
+with open(MANIFEST) as handle:
+    ROWS = list(csv.DictReader(handle))
+IDS = [row["id"] for row in ROWS]
+FIXED_TRUTH = all(row["stage"] in ("fixed_pilot", "fixed_truth", "review_pilot", "review_truth") for row in ROWS)
+WORKER = f"{SOURCE}/dev/continuous/" + ("fixed-truth-worker.R" if FIXED_TRUTH else "campaign-worker.R")
+DATASET = {row["id"]: row.get("dataset_id", row["id"]) for row in ROWS}
+DATASETS = list(dict.fromkeys(DATASET.values()))
+
+rule all:
+    input: f"{CAMPAIGN}/report.rds"
+
+rule simulate:
+    input:
+        manifest=MANIFEST,
+        simulator=f"{SOURCE}/dev/continuous/" + ("simulate-fixed-truth.R" if FIXED_TRUTH else "simulate-reference.R"),
+        worker=WORKER,
+        hashes=f"{CAMPAIGN}/source-md5.rds"
+    output: f"{CAMPAIGN}/inputs/{{id}}.rds"
+    log: f"{CAMPAIGN}/logs/{{id}}-simulate.log"
+    shell:
+        "{RSCRIPT:q} {WORKER:q} simulate {CAMPAIGN:q} {wildcards.id:q} {output:q} > {log:q} 2>&1"
+
+rule fit:
+    input:
+        reference=lambda wildcards: f"{CAMPAIGN}/inputs/{DATASET[wildcards.id]}.rds",
+        worker=WORKER,
+        installed=f"{CAMPAIGN}/library/sccomp/DESCRIPTION"
+    output: f"{CAMPAIGN}/receipts/{{id}}.rds"
+    threads: 4
+    resources: mem_mb=16000, runtime=60
+    log: f"{CAMPAIGN}/logs/{{id}}-fit.log"
+    benchmark: f"{CAMPAIGN}/benchmarks/{{id}}.tsv"
+    shell:
+        "MAKEFLAGS='PRECOMPILED_HEADERS=false' {RSCRIPT:q} {WORKER:q} fit {CAMPAIGN:q} {wildcards.id:q} {output:q} > {log:q} 2>&1"
+
+if FIXED_TRUTH:
+    rule comparator:
+        input:
+            reference=f"{CAMPAIGN}/inputs/{{id}}.rds",
+            worker=WORKER,
+            comparator=f"{SOURCE}/dev/continuous/comparators.R"
+        output: f"{CAMPAIGN}/comparators/{{id}}.rds"
+        threads: 1
+        log: f"{CAMPAIGN}/logs/{{id}}-comparator.log"
+        shell:
+            "{RSCRIPT:q} {WORKER:q} comparator {CAMPAIGN:q} {wildcards.id:q} {output:q} > {log:q} 2>&1"
+
+rule summarize:
+    input:
+        receipts=expand(f"{CAMPAIGN}/receipts/{{id}}.rds", id=IDS),
+        comparators=expand(f"{CAMPAIGN}/comparators/{{id}}.rds", id=DATASETS) if FIXED_TRUTH else [],
+        worker=WORKER
+    output: f"{CAMPAIGN}/report.rds"
+    log: f"{CAMPAIGN}/logs/summarize.log"
+    shell:
+        "{RSCRIPT:q} {WORKER:q} summarize {CAMPAIGN:q} all {output:q} > {log:q} 2>&1"
