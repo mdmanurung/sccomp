@@ -161,6 +161,43 @@ Function | Description
 `sccomp_remove_unwanted_effects` | Removes the variability for unwanted factors
 `plot` | Plots summary plots to assess significance 
 
+## Continuous outcomes (development API)
+
+Use `sccomp_estimate_continuous()` for complete sample-feature tables of finite
+transformed assay values. It supports Gaussian and Student-t observations,
+variance moderation across features, and location random intercepts/slopes.
+Biological coefficients have fixed priors. The Student-t residual variance is
+its actual observation variance, with the likelihood scale corrected for df.
+
+This API is under qualification. A fit passing HMC diagnostics does not establish
+publication readiness or discovery calibration. The inherited
+`sccomp_estimate(noise_model = "student_t")` path is an exploratory prototype;
+it is separate from the dedicated model and its qualification evidence.
+
+```{r continuous-example, eval=FALSE}
+fit <- sccomp_estimate_continuous(
+  log_expression_long,
+  formula_location = ~ condition + (1 | donor),
+  formula_variance = ~ 1,
+  sample = "sample", feature = "gene", value = "log_expression",
+  family = "student_t", chains = 4, cores = 4,
+  iter_warmup = 1500, iter_sampling = 1500,
+  mcmc_seed = 10102026, adapt_delta = .995, max_treedepth = 12
+)
+tested <- sccomp_test(fit, effect_threshold = .25, posterior_fdr = .05)
+```
+
+Location effects and predictions use original input units. Test thresholds must
+be explicit. Continuous results use `feature`, `component`, `parameter`,
+`estimate`, intervals and HMC diagnostics; testing adds component/contrast-specific
+`posterior_fdr` and `selected`. Selection blocks unqualified HMC fits; VI requires
+`allow_exploratory = TRUE` and keeps its exploratory marker.
+
+See `vignette("continuous-outcomes")` for priors, scaling, variance contrasts,
+prediction/residual semantics and limitations. Raw counts require the released
+count workflow. Continuous outlier refits and proportional fold changes are
+unavailable.
+
 # Analysis Tutorial
 
 ```{r load-libraries, message=FALSE, warning=FALSE}
@@ -601,4 +638,3 @@ mcmc_trace(draws, pars = "beta[2,1]") + theme_bw()
 ```{r session-info, message=FALSE}
 sessionInfo()
 ```
-

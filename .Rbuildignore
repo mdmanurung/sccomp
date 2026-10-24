@@ -1,6 +1,7 @@
 ^run_tests\.R$
 ^\.github$
 ^LICENSE\.md$
+^LICENSE$
 ^README\.md$
 ^README\.rmd$
 ^\.gitignore$
@@ -30,3 +31,8 @@ sccomp_draws_files
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
+^\.local$
+^\.snakemake$
+^HANDOFF_CONTINUOUS_SCCOMP\.md$
+^HANDOFF\.md$
+^sccomp_continuous_draws$

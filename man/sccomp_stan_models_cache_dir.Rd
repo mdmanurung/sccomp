@@ -14,9 +14,10 @@ A global variable that defines the default cache directory for Stan models used 
 This directory is used to store compiled Stan models to avoid recompilation on subsequent runs.
 }
 \details{
-The cache directory is set to \code{~/.sccomp_models} by default. This location is used by
-various sccomp functions to store and retrieve compiled Stan models, improving performance
-by avoiding unnecessary recompilation of models that have already been compiled.
+The cache directory is set to \code{~/.sccomp_models} by default. Functions
+use it to store and retrieve compiled models without recompilation.
+Set \code{SCCOMP_STAN_CACHE_DIR} before loading the package to choose a writable
+default cache for all calls, including tests and vignettes.
 
 Users can override this default by specifying a different cache directory in function calls
 that accept a \code{cache_stan_model} parameter.

@@ -10,9 +10,10 @@
 #' This directory is used to store compiled Stan models to avoid recompilation on subsequent runs.
 #' 
 #' @details
-#' The cache directory is set to \code{~/.sccomp_models} by default. This location is used by
-#' various sccomp functions to store and retrieve compiled Stan models, improving performance
-#' by avoiding unnecessary recompilation of models that have already been compiled.
+#' The cache directory is set to \code{~/.sccomp_models} by default. Functions
+#' use it to store and retrieve compiled models without recompilation.
+#' Set \code{SCCOMP_STAN_CACHE_DIR} before loading the package to choose a writable
+#' default cache for all calls, including tests and vignettes.
 #' 
 #' Users can override this default by specifying a different cache directory in function calls
 #' that accept a \code{cache_stan_model} parameter.
@@ -30,7 +31,10 @@
 #' \code{\link{sccomp_estimate}}, \code{\link{sccomp_replicate}}, \code{\link{clear_stan_model_cache}}
 #' 
 #' @export
-sccomp_stan_models_cache_dir = file.path(path.expand("~"), ".sccomp_models")
+sccomp_stan_models_cache_dir = Sys.getenv("SCCOMP_STAN_CACHE_DIR")
+if (!nzchar(sccomp_stan_models_cache_dir)) {
+  sccomp_stan_models_cache_dir = file.path(path.expand("~"), ".sccomp_models")
+}
 
 #' Add attribute to abject
 #'
@@ -978,7 +982,7 @@ get_variability_to_composition_map = function(X, Xa) {
     }
   }
 
-  as.integer(variability_to_composition_map)
+  as.array(as.integer(variability_to_composition_map))
 }
 
 #'
@@ -994,7 +998,8 @@ data_spread_to_model_input =
     bimodal_mean_variability_association = FALSE,
     use_data = TRUE,
     random_effect_elements,
-    accept_NA_as_average_effect = FALSE){
+    accept_NA_as_average_effect = FALSE,
+    noise_model = "multi_beta_binomial"){
     
     # Define the variables as NULL to avoid CRAN NOTES
     exposure <- NULL
@@ -1231,7 +1236,8 @@ data_spread_to_model_input =
     y = .data_spread %>% select(-any_of(factor_names), -exposure, -!!.grouping_for_random_effect) %>% column_to_rownames(quo_name(.sample)) %>% as.matrix()
     
     # If proportion ix 0 issue
-    is_proportion = y |> as.numeric() |> max()  |> between(0,1) |> all()
+    is_proportion = noise_model == "multi_beta_binomial" &&
+      (y |> as.numeric() |> between(0,1) |> all())
     if(is_proportion){
       y_proportion = y
       y = y[0,,drop = FALSE]
@@ -1786,7 +1792,5 @@ handle_missing_values <- function(data) {
       )
     )
 }
-
-
 
 

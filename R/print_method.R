@@ -48,6 +48,7 @@ print.sccomp_tbl <- function(x, ...) {
   # Get data dimensions
   n_samples <- x |> attr("model_input") %$% N
   n_cell_groups <- x |> attr("model_input") %$% M 
+  is_student_t <- identical(noise_model, "student_t")
   
   # Print header with model information
   cat("sccomp model\n")
@@ -55,13 +56,19 @@ print.sccomp_tbl <- function(x, ...) {
   
   cat("Model specifications:\n")
   cat("  Family:", noise_model, "\n")
-  cat("  Composition formula:", deparse(formula_composition), "\n")
+  cat(if (is_student_t) "  Location formula:" else "  Composition formula:",
+      deparse(formula_composition), "\n")
   cat("  Variability formula:", deparse(formula_variability), "\n")
   cat("  Inference method:", inference_method, "\n\n")
   
-  cat("Data: Samples:", n_samples, "  Cell groups:", n_cell_groups, "\n\n")
+  cat("Data: Samples:", n_samples,
+      if (is_student_t) "  Features:" else "  Cell groups:", n_cell_groups, "\n\n")
   
-  cat("Column prefixes: c_ -> composition parameters  v_ -> variability parameters\n\n")
+  cat(if (is_student_t) {
+    "Column prefixes: c_ -> location parameters  v_ -> log-variance parameters\n\n"
+  } else {
+    "Column prefixes: c_ -> composition parameters  v_ -> variability parameters\n\n"
+  })
   
   cat("Convergence diagnostics:\n")
   cat("  For each parameter, n_eff is the effective sample size and R_k_hat is the potential\n")
@@ -72,4 +79,4 @@ print.sccomp_tbl <- function(x, ...) {
   
   # Return the object invisibly
   invisible(x)
-} 
+}

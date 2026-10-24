@@ -23,6 +23,7 @@ sccomp_estimate(
   verbose = TRUE,
   enable_loo = FALSE,
   noise_model = "multi_beta_binomial",
+  student_t_df = 4,
   exclude_mean_variability_association = FALSE,
   use_data = TRUE,
   mcmc_seed = sample_seed(),
@@ -70,7 +71,9 @@ abundance column (counts or proportions), and factor columns.}
 hyperpriors on \code{prec_intercept}, \code{prec_slope}, and \code{log_prec_sd}. Use \code{NULL} for
 package defaults. A scalar logical such as \code{FALSE} is not meaningful here and is treated
 as \code{NULL} after a message; to disable abundance dependence in the variability prior,
-use \code{exclude_mean_variability_association = TRUE} instead.}
+use \code{exclude_mean_variability_association = TRUE} instead. For the Student-t
+family, the unchanged package default is automatically recentered from 4 to
+0 on the log-precision scale (unit residual variance).}
 
 \item{.sample_cell_group_pairs_to_exclude}{A column name indicating sample/cell-group pairs to exclude.}
 
@@ -80,7 +83,14 @@ use \code{exclude_mean_variability_association = TRUE} instead.}
 
 \item{enable_loo}{Logical, whether to enable model comparison using the LOO package.}
 
-\item{noise_model}{A character string specifying the noise model (e.g., 'multi_beta_binomial').}
+\item{noise_model}{Observation family. \code{"multi_beta_binomial"} models integer
+counts (or proportions with its beta analogue) as compositional outcomes.
+\code{"student_t"} models rectangular continuous feature values with an
+unconstrained feature-wise Student-t location-scale regression.}
+
+\item{student_t_df}{Degrees of freedom for \code{noise_model = "student_t"}.
+Must be a finite scalar greater than 2; smaller values are more robust to
+heavy-tailed observations. The default is 4.}
 
 \item{exclude_mean_variability_association}{Logical. When \code{TRUE}, the prior
 on the variability parameters does not depend on the abundance: the

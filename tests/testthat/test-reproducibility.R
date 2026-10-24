@@ -44,10 +44,12 @@ test_that("sccomp_estimate is reproducible with fixed mcmc_seed", {
     expect_identical(
       fit1 |>
         dplyr::arrange(cell_group, parameter) |>
-        dplyr::select(cell_group, parameter, c_effect, c_lower, c_upper),
+        dplyr::select(cell_group, parameter, c_effect, c_lower, c_upper) |>
+        lapply(identity),
       fit2 |>
         dplyr::arrange(cell_group, parameter) |>
-        dplyr::select(cell_group, parameter, c_effect, c_lower, c_upper),
+        dplyr::select(cell_group, parameter, c_effect, c_lower, c_upper) |>
+        lapply(identity),
       info = method
     )
   }

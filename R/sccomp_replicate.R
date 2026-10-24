@@ -8,6 +8,8 @@
 #' @param number_of_draws An integer. How may copies of the data you want to draw from the model joint posterior distribution.
 #' @param mcmc_seed An integer. Used for Markov-chain Monte Carlo reproducibility. By default a random number is sampled from 1 to 999999. This itself can be controlled by set.seed()
 #' @param cache_stan_model A character string specifying the cache directory for compiled Stan models. 
+#' @param ... Continuous-method arguments: `formula_location`, `formula_variance`
+#'   and sample-wise `new_data`.
 #'                        The sccomp version will be automatically appended to ensure version isolation.
 #'                        Default is `sccomp_stan_models_cache_dir` which points to `~/.sccomp_models`.
 #'
@@ -52,10 +54,10 @@ sccomp_replicate <- function(fit,
                              formula_variability = NULL,
                              number_of_draws = 1,
                              mcmc_seed = sample_seed(),
-                             cache_stan_model = sccomp_stan_models_cache_dir) {
+                             cache_stan_model = sccomp_stan_models_cache_dir, ...) {
   
   # Run the function
-  check_and_install_cmdstanr()
+  if (!inherits(fit, "sccomp_continuous_tbl")) check_and_install_cmdstanr()
   
   UseMethod("sccomp_replicate", fit)
 }
@@ -67,7 +69,7 @@ sccomp_replicate.sccomp_tbl = function(fit,
                                        formula_variability = NULL,
                                        number_of_draws = 1,
                                        mcmc_seed = sample_seed(),
-                                       cache_stan_model = sccomp_stan_models_cache_dir){
+                                       cache_stan_model = sccomp_stan_models_cache_dir, ...){
   
   .sample = attr(fit, ".sample")
   .cell_group = attr(fit, ".cell_group")
@@ -551,8 +553,13 @@ replicate_data = function(.data,
   # To avoid error in case of a NULL posterior sample
   number_of_draws = min(number_of_draws, number_of_draws_in_the_fit)
   
-  # Load model
-  mod_rng = load_model("glm_multi_beta_binomial_generate_data", threads = cores, cache_dir = cache_stan_model)
+  # Load the generated-quantities model for the fitted observation family.
+  generated_model_name <- if (identical(attr(.data, "noise_model"), "student_t")) {
+    "glm_multi_student_t_generate_data"
+  } else {
+    "glm_multi_beta_binomial_generate_data"
+  }
+  mod_rng = load_model(generated_model_name, threads = cores, cache_dir = cache_stan_model)
 
   fit_obj <- attr(.data, "fit")
   # For generate_quantities we must pass a fitted-parameter set that matches the

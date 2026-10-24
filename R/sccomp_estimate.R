@@ -39,14 +39,22 @@
 #'   hyperpriors on `prec_intercept`, `prec_slope`, and `log_prec_sd`. Use `NULL` for
 #'   package defaults. A scalar logical such as `FALSE` is not meaningful here and is treated
 #'   as `NULL` after a message; to disable abundance dependence in the variability prior,
-#'   use `exclude_mean_variability_association = TRUE` instead.
+#'   use `exclude_mean_variability_association = TRUE` instead. For the Student-t
+#'   family, the unchanged package default is automatically recentered from 4 to
+#'   0 on the log-precision scale (unit residual variance).
 #' @param percent_false_positive A real number between 0 and 100 for outlier identification.
 #' @param inference_method Character string specifying the inference method to use ('pathfinder', 'hmc', or 'variational'). Replaces the deprecated `approximate_posterior_inference` and `variational_inference`.
 #' @param .sample_cell_group_pairs_to_exclude A column name indicating sample/cell-group pairs to exclude.
 #' @param output_directory A character string specifying the output directory for Stan draws.
 #' @param verbose Logical, whether to print progression details.
 #' @param enable_loo Logical, whether to enable model comparison using the LOO package.
-#' @param noise_model A character string specifying the noise model (e.g., 'multi_beta_binomial').
+#' @param noise_model Observation family. `"multi_beta_binomial"` models integer
+#'   counts (or proportions with its beta analogue) as compositional outcomes.
+#'   `"student_t"` models rectangular continuous feature values with an
+#'   unconstrained feature-wise Student-t location-scale regression.
+#' @param student_t_df Degrees of freedom for `noise_model = "student_t"`.
+#'   Must be a finite scalar greater than 2; smaller values are more robust to
+#'   heavy-tailed observations. The default is 4.
 #' @param exclude_mean_variability_association Logical. When `TRUE`, the prior
 #'   on the variability parameters does not depend on the abundance: the
 #'   mean-variability regression is reduced to an intercept-only Normal (or a
@@ -173,6 +181,7 @@ sccomp_estimate <- function(.data,
                             verbose = TRUE,
                             enable_loo = FALSE,
                             noise_model = "multi_beta_binomial",
+                            student_t_df = 4,
                             exclude_mean_variability_association = FALSE,
                             use_data = TRUE,
                             mcmc_seed = sample_seed(),
@@ -205,20 +214,24 @@ sccomp_estimate <- function(.data,
 #' @importFrom rlang :=
 #' @importFrom tibble enframe
 #' @importFrom purrr map_int
-data_to_spread = function(.data, formula, .sample, .cell_group, .count, .grouping_for_random_effect){
+data_to_spread = function(.data, formula, .sample, .cell_group, .count,
+                          .grouping_for_random_effect,
+                          noise_model = "multi_beta_binomial"){
   
   .sample = enquo(.sample)
   .cell_group = enquo(.cell_group)
   .count = enquo(.count)
 
-  is_proportion = .data |> pull(!!.count) |> max() <= 1
+  is_proportion = noise_model == "multi_beta_binomial" &&
+    max(.data |> pull(!!.count)) <= 1
   
   .data = 
     .data |>
     nest(data = -!!.sample) 
   
   # If proportions exposure = 1
-  if(is_proportion) .data = .data |> mutate(exposure = 1)
+  if(is_proportion || noise_model == "student_t")
+    .data = .data |> mutate(exposure = 1L)
   else
     .data = 
     .data |>
@@ -267,6 +280,7 @@ sccomp_estimate.Seurat <- function(.data,
                                    verbose = TRUE,
                                    enable_loo = FALSE,
                                    noise_model = "multi_beta_binomial",
+                                   student_t_df = 4,
                                    exclude_mean_variability_association = FALSE,
                                    use_data = TRUE,
                                    mcmc_seed = sample_seed(),
@@ -322,6 +336,7 @@ sccomp_estimate.Seurat <- function(.data,
       verbose = verbose,
       enable_loo = enable_loo,
       noise_model = noise_model,
+      student_t_df = student_t_df,
       exclude_mean_variability_association = exclude_mean_variability_association,
       use_data = use_data,
       mcmc_seed = mcmc_seed,
@@ -366,6 +381,7 @@ sccomp_estimate.SingleCellExperiment <- function(.data,
                                                  verbose = TRUE,
                                                  enable_loo = FALSE,
                                                  noise_model = "multi_beta_binomial",
+                                                 student_t_df = 4,
                                                  exclude_mean_variability_association = FALSE,
                                                  use_data = TRUE,
                                                  mcmc_seed = sample_seed(),
@@ -422,6 +438,7 @@ sccomp_estimate.SingleCellExperiment <- function(.data,
       verbose = verbose,
       enable_loo = enable_loo,
       noise_model = noise_model,
+      student_t_df = student_t_df,
       exclude_mean_variability_association = exclude_mean_variability_association,
       use_data = use_data,
       mcmc_seed = mcmc_seed,
@@ -466,6 +483,7 @@ sccomp_estimate.DFrame <- function(.data,
                                    verbose = TRUE,
                                    enable_loo = FALSE,
                                    noise_model = "multi_beta_binomial",
+                                   student_t_df = 4,
                                    exclude_mean_variability_association = FALSE,
                                    use_data = TRUE,
                                    mcmc_seed = sample_seed(),
@@ -513,6 +531,7 @@ sccomp_estimate.DFrame <- function(.data,
       verbose = verbose,
       enable_loo = enable_loo,
       noise_model = noise_model,
+      student_t_df = student_t_df,
       exclude_mean_variability_association = exclude_mean_variability_association,
       use_data = use_data,
       mcmc_seed = mcmc_seed,
@@ -560,6 +579,7 @@ sccomp_estimate.data.frame <- function(.data,
                                        verbose = TRUE,
                                        enable_loo = FALSE,
                                        noise_model = "multi_beta_binomial",
+                                       student_t_df = 4,
                                        exclude_mean_variability_association = FALSE,
                                        use_data = TRUE,
                                        mcmc_seed = sample_seed(),
@@ -586,6 +606,30 @@ sccomp_estimate.data.frame <- function(.data,
   .abundance <- enquo(.abundance)
   
   .sample_cell_group_pairs_to_exclude <- enquo(.sample_cell_group_pairs_to_exclude)
+
+  noise_model <- match.arg(
+    noise_model,
+    choices = c("multi_beta_binomial", "student_t")
+  )
+
+  if (noise_model == "student_t") {
+    if (length(student_t_df) != 1L || !is.numeric(student_t_df) ||
+        !is.finite(student_t_df) || student_t_df <= 2) {
+      stop(
+        "sccomp says: `student_t_df` must be one finite numeric value greater than 2.",
+        call. = FALSE
+      )
+    }
+
+    default_variability_prior <- list(
+      intercept = c(4, 2),
+      slope = c(0, 2),
+      standard_deviation = c(1, 0.5)
+    )
+    if (identical(prior_overdispersion_mean_association, default_variability_prior)) {
+      prior_overdispersion_mean_association$intercept <- c(0, 2)
+    }
+  }
   
   
   # Handle deprecated inference method arguments
@@ -671,6 +715,13 @@ sccomp_estimate.data.frame <- function(.data,
       stop("sccomp says: abundance must be of character type")
     }
   }
+
+  if (noise_model == "student_t" && is.null(abundance)) {
+    stop(
+      "sccomp says: `noise_model = \"student_t\"` requires a data-frame input and an `abundance` column containing continuous feature values.",
+      call. = FALSE
+    )
+  }
   
   
   
@@ -694,6 +745,8 @@ sccomp_estimate.data.frame <- function(.data,
       output_directory = output_directory,
       verbose = verbose,
       enable_loo = enable_loo,
+      noise_model = noise_model,
+      student_t_df = student_t_df,
       exclude_mean_variability_association = exclude_mean_variability_association,
       use_data = use_data,
       mcmc_seed = mcmc_seed,
@@ -725,6 +778,8 @@ sccomp_estimate.data.frame <- function(.data,
       output_directory = output_directory,
       verbose = verbose,
       enable_loo = enable_loo,
+      noise_model = noise_model,
+      student_t_df = student_t_df,
       exclude_mean_variability_association = exclude_mean_variability_association,
       use_data = use_data,
       mcmc_seed = mcmc_seed,
@@ -735,10 +790,16 @@ sccomp_estimate.data.frame <- function(.data,
       ...
     )
   
-  message("sccomp says: to do hypothesis testing run `sccomp_test()`,
-  the `test_composition_above_logit_fold_change` = 0.1 equates to a change of ~10%, and
-  0.7 equates to ~100% increase, if the baseline is ~0.1 proportion.
-  Use `sccomp_proportional_fold_change` to convert c_effect (linear) to proportion difference (non-linear).")
+  if (noise_model == "student_t") {
+    message(
+      "sccomp says: to do hypothesis testing run `sccomp_test()`. For the Student-t family, `c_effect` and the testing threshold are on the input abundance scale."
+    )
+  } else {
+    message("sccomp says: to do hypothesis testing run `sccomp_test()`,
+    the `test_composition_above_logit_fold_change` = 0.1 equates to a change of ~10%, and
+    0.7 equates to ~100% increase, if the baseline is ~0.1 proportion.
+    Use `sccomp_proportional_fold_change` to convert c_effect (linear) to proportion difference (non-linear).")
+  }
   
   # Auto-cleanup draw files if requested
   if (portable) {
@@ -760,7 +821,8 @@ sccomp_estimate.data.frame <- function(.data,
   res |>
     
     # Track input parameters
-    add_attr(noise_model, "noise_model")
+    add_attr(noise_model, "noise_model") |>
+    add_attr(student_t_df, "student_t_df")
 }
 
 #' @importFrom tidyr complete
@@ -789,6 +851,8 @@ sccomp_glm_data_frame_raw = function(.data,
                                      exclude_mean_variability_association = FALSE,
                                      bimodal_mean_variability_association = FALSE,
                                      enable_loo = FALSE,
+                                     noise_model = "multi_beta_binomial",
+                                     student_t_df = 4,
                                      use_data = TRUE,
                                      cores = 4,
                                      mcmc_seed = sample_seed(),
@@ -797,6 +861,13 @@ sccomp_glm_data_frame_raw = function(.data,
                                      sig_figs = 9,
                                      cache_stan_model = sccomp_stan_models_cache_dir,
                                      ...) {
+
+  if (noise_model == "student_t") {
+    stop(
+      "sccomp says: `noise_model = \"student_t\"` requires an explicit continuous `abundance` column.",
+      call. = FALSE
+    )
+  }
   
   # See https://community.rstudio.com/t/how-to-make-complete-nesting-work-with-quosures-and-tidyeval/16473
   # See https://github.com/tidyverse/tidyr/issues/506
@@ -866,6 +937,8 @@ sccomp_glm_data_frame_raw = function(.data,
       exclude_mean_variability_association = exclude_mean_variability_association,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       enable_loo = enable_loo,
+      noise_model = noise_model,
+      student_t_df = student_t_df,
       use_data = use_data,
       cores = cores,
       test_composition_above_logit_fold_change = test_composition_above_logit_fold_change, .sample_cell_group_pairs_to_exclude = !!.sample_cell_group_pairs_to_exclude,
@@ -903,6 +976,8 @@ sccomp_glm_data_frame_counts = function(.data,
                                         exclude_mean_variability_association = FALSE,
                                         bimodal_mean_variability_association = FALSE,
                                         enable_loo = FALSE,
+                                        noise_model = "multi_beta_binomial",
+                                        student_t_df = 4,
                                         use_data = TRUE,
                                         cores = 4,
                                         mcmc_seed = sample_seed(),
@@ -926,13 +1001,39 @@ sccomp_glm_data_frame_counts = function(.data,
   #Check column class
   check_if_columns_right_class(.data, !!.sample, !!.cell_group)
   
-  # Check that we have at least 2 cell groups for compositional analysis
-  check_minimum_cell_groups(.data, !!.cell_group)
-  
-  # Check that count is integer
-  if(.data %>% pull(!!.count) %>% is("integer")) message(sprintf("sccomp says: %s column is an integer. The sum-constrained beta binomial model will be used", quo_name(.count)))
-  else if(.data %>% pull(!!.count) %>% is("integer") |> not() & .data %>% pull(!!.count) |> dplyr::between(0, 1) |> all()) message(sprintf("sccomp says: %s column is a proportion. The sum-constrained beta model will be used. When possible using counts is preferred as the binomial noise component is often dominating for rare groups (e.g. rare cell types).", quo_name(.count)))
-  else stop(sprintf("sccomp: `%s` column must be an integer or a proportion", quo_name(.count)))
+  if (noise_model == "multi_beta_binomial") {
+    # The compositional model needs at least two categories.
+    check_minimum_cell_groups(.data, !!.cell_group)
+
+    if(.data %>% pull(!!.count) %>% is("integer")) message(sprintf("sccomp says: %s column is an integer. The sum-constrained beta binomial model will be used", quo_name(.count)))
+    else if(.data %>% pull(!!.count) %>% is("integer") |> not() & .data %>% pull(!!.count) |> dplyr::between(0, 1) |> all()) message(sprintf("sccomp says: %s column is a proportion. The sum-constrained beta model will be used. When possible using counts is preferred as the binomial noise component is often dominating for rare groups (e.g. rare cell types).", quo_name(.count)))
+    else stop(sprintf("sccomp: `%s` column must be an integer or a proportion", quo_name(.count)))
+  } else {
+    abundance_values <- .data |> pull(!!.count)
+    if (!is.numeric(abundance_values) || any(!is.finite(abundance_values))) {
+      stop(
+        sprintf(
+          "sccomp says: `%s` must contain finite numeric values for the Student-t model.",
+          quo_name(.count)
+        ),
+        call. = FALSE
+      )
+    }
+
+    observed_pairs <- .data |> distinct(!!.sample, !!.cell_group) |> nrow()
+    expected_pairs <- (.data |> distinct(!!.sample) |> nrow()) *
+      (.data |> distinct(!!.cell_group) |> nrow())
+    if (observed_pairs != expected_pairs) {
+      stop(
+        "sccomp says: the Student-t model requires one observed value for every sample/feature pair; missing pairs are not filled with zero.",
+        call. = FALSE
+      )
+    }
+    message(sprintf(
+      "sccomp says: %s column is continuous. The feature-wise Student-t model with %g degrees of freedom will be used",
+      quo_name(.count), student_t_df
+    ))
+  }
   
   # Check if columns exist
   check_columns_exist(.data, c(
@@ -948,7 +1049,9 @@ sccomp_glm_data_frame_counts = function(.data,
   
   
   # Make rectangular data
-  .data = .data |> make_rectangular_data(!!.sample, !!.cell_group, !!.count, formula_composition)
+  if (noise_model == "multi_beta_binomial") {
+    .data = .data |> make_rectangular_data(!!.sample, !!.cell_group, !!.count, formula_composition)
+  }
   
   # Check if test_composition_above_logit_fold_change is 0, as the Bayesian FDR does not allow it
   if(test_composition_above_logit_fold_change <= 0)
@@ -995,7 +1098,7 @@ sccomp_glm_data_frame_counts = function(.data,
       stop(glue("sccomp says: {quo_name(.sample_cell_group_pairs_to_exclude)} must be logical"))
     
     # Error if not consistent to sample/cell group
-    if(.data |> count(!!.sample, !!.cell_group, name = "n") |> filter(n>1) |> nrow() |> gt(0))
+    if((.data |> count(!!.sample, !!.cell_group, name = "n") |> filter(n>1) |> nrow()) > 0)
       stop(glue("sccomp says: {quo_name(.sample_cell_group_pairs_to_exclude)} must be unique with .sample/.cell_group pairs. You might have a .sample/.cell_group pair with both TRUE and FALSE {quo_name(.sample_cell_group_pairs_to_exclude)}."))
     
   } else {
@@ -1017,7 +1120,8 @@ sccomp_glm_data_frame_counts = function(.data,
     data_to_spread(
       formula_composition, 
       !!.sample, !!.cell_group, !!.count, 
-      .grouping_for_random_effect |> map(~ .x |> quo_name() ) |> unlist()
+      .grouping_for_random_effect |> map(~ .x |> quo_name() ) |> unlist(),
+      noise_model = noise_model
     ) |>
     
     # This emerged with
@@ -1033,7 +1137,8 @@ sccomp_glm_data_frame_counts = function(.data,
       contrasts = contrasts,
       bimodal_mean_variability_association = bimodal_mean_variability_association,
       use_data = use_data,
-      random_effect_elements
+      random_effect_elements,
+      noise_model = noise_model
     )
   
   # Print design matrix
@@ -1063,17 +1168,26 @@ sccomp_glm_data_frame_counts = function(.data,
   data_for_model$prior_mean_coefficients = prior_mean$coefficients
   data_for_model$exclude_mean_variability_association = exclude_mean_variability_association
   data_for_model$enable_loo = enable_loo
+  if (noise_model == "student_t") {
+    data_for_model$student_t_df = as.numeric(student_t_df)
+  }
   
   # # Check that design matrix is not too big
   # if(ncol(data_for_model$X)>20)
   #   message("sccomp says: the design matrix has more than 20 columns. Possibly some numerical factors are erroneously of type character/factor.")
   
+  model_name <- if (noise_model == "student_t") {
+    "glm_multi_student_t"
+  } else {
+    "glm_multi_beta_binomial"
+  }
+
   fit =
     data_for_model %>%
     
     # Run the first discovery phase with permissive false discovery rate
     fit_model(
-      "glm_multi_beta_binomial",
+      model_name,
       cores= cores,
       quantile = CI,
       inference_method = inference_method,

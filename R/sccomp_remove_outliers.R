@@ -106,6 +106,10 @@ sccomp_remove_outliers <- function(.estimate,
                                    variational_inference = NULL,
                                    ...
 ) {
+  if (inherits(.estimate, "sccomp_continuous_tbl")) {
+    stop("Outlier removal/refitting is unavailable for continuous fits; use the Student-t family.",
+         call. = FALSE)
+  }
   if(inference_method == "variational") 
     rlang::inform(
       message = "sccomp says: From version 1.7.7 the model by default is fit with the variational inference method (inference_method = \"variational\"; much faster). For a full Bayesian inference (HMC method; the gold standard) use inference_method = \"hmc\".", 
@@ -165,6 +169,15 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   formula_variability = .estimate |> attr("formula_variability")
   
   noise_model = .estimate |> attr("noise_model")
+  student_t_df = .estimate |> attr("student_t_df")
+  is_student_t = identical(noise_model, "student_t")
+  model_name = if (is_student_t) "glm_multi_student_t" else "glm_multi_beta_binomial"
+  generated_model_name = if (is_student_t) {
+    "glm_multi_student_t_generate_data"
+  } else {
+    "glm_multi_beta_binomial_generate_data"
+  }
+  generated_variable = if (is_student_t) "y_rep" else "counts"
   
   # Get model input
   data_for_model = .estimate |> attr("model_input")
@@ -188,7 +201,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   random_effect_elements = .estimate |> attr("formula_composition") |> parse_formula_random_effect()
   
   # Load model
-  mod_rng = load_model("glm_multi_beta_binomial_generate_data", threads = cores, cache_dir = cache_stan_model)
+  mod_rng = load_model(generated_model_name, threads = cores, cache_dir = cache_stan_model)
   
   rng = mod_rng |> sample_safe(
     generate_quantities_fx,
@@ -252,7 +265,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   truncation_df =
     .data |>
     left_join(
-      summary_to_tibble(rng, "counts", "N", "M", probs = c(0.05, 0.95)) |>
+      summary_to_tibble(rng, generated_variable, "N", "M", probs = c(0.05, 0.95)) |>
         nest(data = -N) |>
         mutate(!!.sample := rownames(data_for_model$X)) |>
         unnest(data) |>
@@ -284,13 +297,13 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
     pivot_wider(names_from = M, values_from = truncation_up) |> 
     column_to_rownames("N") |> 
     as.matrix() |> 
-    apply(2, as.integer)
+    (\(x) if (is_student_t) x else apply(x, 2, as.integer))()
   data_for_model$truncation_down = truncation_df |> 
     select(N, M, truncation_down) |> 
     pivot_wider(names_from = M, values_from = truncation_down) |> 
     column_to_rownames("N") |> 
     as.matrix() |> 
-    apply(2, as.integer)
+    (\(x) if (is_student_t) x else apply(x, 2, as.integer))()
   data_for_model$truncation_not_idx = 
     (data_for_model$truncation_down >= 0) |> 
     t() |> 
@@ -328,7 +341,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   fit2 =
     data_for_model |>
     fit_model(
-      "glm_multi_beta_binomial",
+      model_name,
       cores = cores,
       quantile = my_quantile_step_2,
       inference_method = inference_method,
@@ -389,7 +402,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
   )
   
   rng2_summary = 
-    summary_to_tibble(rng2, "counts", "N", "M", probs = c(CI_step_2, 0.5, 1-CI_step_2)) 
+    summary_to_tibble(rng2, generated_variable, "N", "M", probs = c(CI_step_2, 0.5, 1-CI_step_2))
   
   column_quantile_names = rng2_summary |> colnames() |> str_subset("\\%") |> _[c(1,3)]
   
@@ -436,13 +449,13 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
     pivot_wider(names_from = M, values_from = truncation_up) |> 
     column_to_rownames("N") |> 
     as.matrix() |> 
-    apply(2, as.integer)
+    (\(x) if (is_student_t) x else apply(x, 2, as.integer))()
   data_for_model$truncation_down = truncation_df2 |> 
     select(N, M, truncation_down) |> 
     pivot_wider(names_from = M, values_from = truncation_down) |> 
     column_to_rownames("N") |> 
     as.matrix() |> 
-    apply(2, as.integer)
+    (\(x) if (is_student_t) x else apply(x, 2, as.integer))()
   data_for_model$truncation_not_idx = 
     (data_for_model$truncation_down >= 0) |> 
     t() |> 
@@ -465,7 +478,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
     data_for_model |>
     # Run the first discovery phase with permissive false discovery rate
     fit_model(
-      "glm_multi_beta_binomial",
+      model_name,
       cores = cores,
       quantile = CI,
       inference_method = inference_method,
@@ -507,6 +520,7 @@ sccomp_remove_outliers.sccomp_tbl = function(.estimate,
     add_attr(.data, "count_data") |>
     add_attr(truncation_df2 |> select(!!.sample, !!.cell_group, outlier, contains_outliers), "outliers") |>
     add_attr(noise_model, "noise_model") |>
+    add_attr(student_t_df, "student_t_df") |>
     add_class("sccomp_tbl") |>
     add_attr(parse_formula(formula_composition), "factors" ) 
   

@@ -1,0 +1,167 @@
+---
+title: "Continuous outcomes: development API and qualification"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Continuous outcomes: development API and qualification}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+The dedicated continuous API models transformed assay values with Gaussian or
+Student-t observations. Features share a residual-variance prior, while location
+coefficients use fixed priors. It does not impose a sum constraint. Student-t is
+the default and its scale is adjusted so the reported residual variance is the
+actual observation variance. Features are conditionally independent; residual
+cross-feature covariance is not modeled.
+
+This is a development API. Passing one fit's HMC diagnostics does not establish
+statistical calibration or publication readiness. The package's validation
+campaign must qualify the intended assay, design and decision rule separately.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+Supply complete long data with one finite `value` for every sample-feature pair.
+Use independent-unit metadata explicitly; sample covariates must be constant
+within a sample. Negative transformed values are allowed. Incomplete assays,
+duplicates and rank-deficient designs are rejected.
+
+```{r}
+fit <- sccomp_estimate_continuous(
+  assay, ~ condition + (1 | donor), ~ 1,
+  sample = sample, feature = feature, value = value,
+  family = "student_t", cores = 4, chains = 4,
+  iter_warmup = 1500, iter_sampling = 1500, mcmc_seed = 10102026,
+  adapt_delta = .995, max_treedepth = 12
+)
+fit
+```
+
+Global scaling uses the median of all values and the median positive feature
+MAD. It preserves between-feature relative scales. Location effects, residual
+variances, random SDs, predictions and residuals return to original input units.
+Using `scaling="none"` requires explicitly supplied assay-unit priors. Empirical
+scaling conditions inference on a data-derived transformation; exact-model SBC
+therefore uses explicit priors without that transformation.
+
+The long result identifies `feature`, `component` and `parameter`, and reports
+`estimate`, `lower`, `upper`, `rhat`, `ess_bulk` and `ess_tail`. Global observation
+df has `feature=NA`. Sampler CSVs and fit metadata are retained. The fit's
+posterior-draw attribute is portable; keep it to predict or test after reloading.
+
+```{r}
+tested <- sccomp_test(fit, effect_threshold = 1)
+predicted <- sccomp_predict(fit, summary_instead_of_draws = FALSE)
+replicated <- sccomp_replicate(fit, number_of_draws = 100)
+residuals <- sccomp_calculate_residuals(fit)
+```
+
+`effect_threshold` is required and uses original input units. Selection uses
+posterior probability that the chosen effect direction exceeds the threshold;
+its complement includes both effects within the threshold and the opposite
+direction. Cumulative mean error probabilities define `posterior_fdr` within features for
+each component and contrast. This is a posterior expected error rule. Its
+frequentist operating characteristics require separate simulation evidence.
+
+## Meaningful effects and posterior error
+
+An effect can be precisely estimated while remaining too small to matter.
+For a threshold of 1 log2 unit, an effect near 0.2 with a narrow interval is
+evidence for a small change, but is not a discovery under this decision rule.
+Choose the threshold from the scientific question before inspecting results.
+
+| Quantity | Interpretation |
+| --- | --- |
+| `p_null` | Posterior probability of an effect within the minimum-effect interval |
+| `p_false_sign` | Posterior probability of the opposite sign, including zero |
+| `p_error` | Posterior probability that the chosen direction fails to exceed the threshold |
+| `posterior_fdr` | Cumulative mean `p_error` in one component/contrast discovery family |
+
+`p_error` includes both the interval null and effects in the opposite direction;
+do not add `p_null` and `p_false_sign`, since those events overlap. A posterior
+expected error of 5% describes the fitted model's uncertainty. Realized false
+discoveries across repeated datasets require an independent calibration study.
+Limma `treat()` and dream `getTreat()` also test minimum effects, using a
+frequentist decision rule. Compare them with identical data and thresholds.
+
+## Known technical covariates
+
+Fit measured nuisance covariates jointly so their coefficient uncertainty
+contributes to the treatment posterior. A batch can affect both the location
+and residual variance:
+
+```{r}
+fit_batch <- sccomp_estimate_continuous(
+  assay, ~ condition + batch + (1 | donor), ~ condition + batch,
+  sample = sample, feature = feature, value = value,
+  family = "student_t", mcmc_seed = 10102026
+)
+sccomp_test(fit_batch,
+  contrasts = list(location = c(treated_control = "conditiontreated"),
+                   log_variance = c(treated_control = "-2 * condition1")),
+  effect_threshold = 1, variance_ratio_threshold = 1.5
+)
+```
+
+This example requires observed batch metadata and an identifiable design. When
+batch and treatment coincide, the model cannot separate their effects and
+rejects the rank-deficient design. Joint covariates do not propagate uncertainty
+from normalization performed before fitting, and do not model unknown latent
+factors. The frozen airway example contains no invented batch covariate.
+
+The decision framework follows Lewin, Bottolo and Richardson (2018),
+*Bayesian methods for gene expression analysis*, sections 2.3 and 4.1.
+Adaptive biological-effect shrinkage is a separate, gated extension; this v1
+model retains its fixed biological-effect priors.
+
+Variance covariates use centered sum coding, so their coefficient names and
+interpretation differ from location treatment coding. For two levels `control`
+and `treated`, a variance coefficient named `condition1` represents half the
+control-minus-treated log-variance difference:
+
+```{r}
+fit_v <- sccomp_estimate_continuous(
+  assay, ~ condition, ~ condition, "sample", "feature", "value"
+)
+sccomp_test(fit_v,
+  contrasts = list(location = c(treated_control = "conditiontreated"),
+                   log_variance = c(treated_control = "-2 * condition1")),
+  effect_threshold = 1, variance_ratio_threshold = 1.5
+)
+```
+
+Only linear arithmetic is accepted in contrast expressions. Backtick coefficient
+names containing punctuation. Location and log-variance discovery families stay
+separate. The HMC selection gate requires four chains, zero divergences and
+treedepth saturations, Rhat<1.01, bulk/tail ESS>=400 and chain E-BFMI>0.3.
+VI is exploratory; selection additionally requires `allow_exploratory=TRUE` and
+the result keeps its exploratory marker. Prior-only fits cannot select effects.
+
+Predictions use the complete fitted specification by default. `formula_location`
+can retain a subset of fitted fixed terms and whole random clauses; replication
+also accepts `formula_variance` to retain selected variance terms. This filters
+the fitted coefficients and preserves their coding; it does not refit or
+reparameterize the model. Removed intercepts lose their original-unit centering
+offset. All fitted covariates remain required in sample-wise `new_data`.
+
+Sample-wise
+`new_data` must use fitted factor levels and observed random-effect groups.
+Draw outputs contain `sample`, `feature`, `.draw`, `generated_value`, `location`
+and `residual_variance`; summaries average posterior location/variance and
+summarize generated observations. Residuals subtract posterior mean location
+from observations and standardize by the square root of posterior mean residual
+variance. They use every retained draw without generating replicated values.
+
+Continuous outlier-removal refits, proportional fold change, and unwanted-effect
+removal are unavailable. Use the Student-t family for robust observation noise.
+The optional observed-mean variance trend conditions moderation on observed
+feature means; it is not a fully generative Bayesian mean-variance trend.
+
+Few grouping levels weaken random-effect estimation. Within-group slope
+variation and a full-rank random/residual covariance basis are required.
+Correlated binary intercept/slopes with only two observations per
+group cannot separate residual from random-effect covariance and are rejected.
+Repeat each condition within groups or simplify the clause. Proper priors do
+not resolve missing likelihood information. Interpret random
+variance/correlation estimates with the design and sensitivity checks in view.

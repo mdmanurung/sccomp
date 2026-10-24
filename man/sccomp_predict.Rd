@@ -11,7 +11,8 @@ sccomp_predict(
   number_of_draws = 500,
   mcmc_seed = sample_seed(),
   summary_instead_of_draws = TRUE,
-  robust = FALSE
+  robust = FALSE,
+  ...
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ sccomp_predict(
 \item{summary_instead_of_draws}{Return the summary values (i.e. mean and quantiles) of the predicted proportions, or return single draws. Single draws can be helful to better analyse the uncertainty of the prediction.}
 
 \item{robust}{A logical. If TRUE, use robust statistics (median and median absolute deviation) instead of classical statistics (mean and standard deviation) for the summary calculations.}
+
+\item{...}{Continuous-method arguments, including \code{formula_location} for
+retaining fitted terms. Continuous fits return input-unit location/variance.}
 }
 \value{
 A tibble (\code{tbl}) with the following columns:
@@ -43,10 +47,17 @@ A tibble (\code{tbl}) with the following columns:
 \item \strong{unconstrained} - A numeric column (when summary_instead_of_draws=FALSE) representing individual draws of the unconstrained predictors.
 \item \strong{proportion} - A numeric column (when summary_instead_of_draws=FALSE) representing individual draws of the predicted proportions.
 \item \strong{.draw} - An integer column (when summary_instead_of_draws=FALSE) representing the draw index.
+\item For Student-t fits, the analogous summary columns are
+\code{location_mean}, \code{location_lower}, \code{location_upper}, \code{value_mean},
+\code{value_lower}, and \code{value_upper}; draw-level output uses \code{location} and
+\code{value}.
 }
 }
 \description{
-This function replicates counts from a real-world dataset.
+Generate posterior predictions from a fitted sccomp model.
+Compositional fits return predicted proportions and unconstrained linear
+predictors. Student-t fits return feature-wise locations and posterior
+predictive continuous values.
 }
 \examples{
 

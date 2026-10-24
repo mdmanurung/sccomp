@@ -48,6 +48,10 @@ sccomp_draws_files
 docs
 /.quarto/
 **/*.quarto_ipynb
+.local/
+.snakemake/
+sccomp_continuous_draws/
+dev/continuous/runs/
 .Renviron
 *.exe
 sccomp.Rcheck*

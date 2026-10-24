@@ -1,6 +1,9 @@
 #' sccomp_predict
 #'
-#' @description This function replicates counts from a real-world dataset.
+#' @description Generate posterior predictions from a fitted sccomp model.
+#'   Compositional fits return predicted proportions and unconstrained linear
+#'   predictors. Student-t fits return feature-wise locations and posterior
+#'   predictive continuous values.
 #'
 #' @references
 #' S. Mangiola, A.J. Roth-Schulze, M. Trussart, E. Zozaya-Valdés, M. Ma, Z. Gao, A.F. Rubin, T.P. Speed, H. Shim, & A.T. Papenfuss, sccomp: Robust differential composition and variability analysis for single-cell data, Proc. Natl. Acad. Sci. U.S.A. 120 (33) e2203828120, https://doi.org/10.1073/pnas.2203828120 (2023).
@@ -12,6 +15,8 @@
 #' @param mcmc_seed An integer. Used for Markov-chain Monte Carlo reproducibility. By default a random number is sampled from 1 to 999999. This itself can be controlled by set.seed()
 #' @param summary_instead_of_draws Return the summary values (i.e. mean and quantiles) of the predicted proportions, or return single draws. Single draws can be helful to better analyse the uncertainty of the prediction.
 #' @param robust A logical. If TRUE, use robust statistics (median and median absolute deviation) instead of classical statistics (mean and standard deviation) for the summary calculations.
+#' @param ... Continuous-method arguments, including `formula_location` for
+#'   retaining fitted terms. Continuous fits return input-unit location/variance.
 #'
 #' @return A tibble (`tbl`) with the following columns:
 #' \itemize{
@@ -26,6 +31,10 @@
 #'   \item \strong{unconstrained} - A numeric column (when summary_instead_of_draws=FALSE) representing individual draws of the unconstrained predictors.
 #'   \item \strong{proportion} - A numeric column (when summary_instead_of_draws=FALSE) representing individual draws of the predicted proportions.
 #'   \item \strong{.draw} - An integer column (when summary_instead_of_draws=FALSE) representing the draw index.
+#'   \item For Student-t fits, the analogous summary columns are
+#'   `location_mean`, `location_lower`, `location_upper`, `value_mean`,
+#'   `value_lower`, and `value_upper`; draw-level output uses `location` and
+#'   `value`.
 #' }
 #' 
 #' @export
@@ -56,11 +65,11 @@ sccomp_predict <- function(fit,
                            number_of_draws = 500,
                            mcmc_seed = sample_seed(),
                            summary_instead_of_draws = TRUE,
-                           robust = FALSE) {
+                           robust = FALSE, ...) {
   
   
   # Run the function
-  check_and_install_cmdstanr()
+  if (!inherits(fit, "sccomp_continuous_tbl")) check_and_install_cmdstanr()
   
   
   UseMethod("sccomp_predict", fit)
@@ -74,13 +83,14 @@ sccomp_predict.sccomp_tbl = function(fit,
                                      number_of_draws = 500,
                                      mcmc_seed = sample_seed(),
                                      summary_instead_of_draws = TRUE,
-                                     robust = FALSE){
+                                     robust = FALSE, ...){
   
   
   
   model_input = attr(fit, "model_input")
   .sample = attr(fit, ".sample")
   .cell_group = attr(fit, ".cell_group")
+  is_student_t = identical(attr(fit, "noise_model"), "student_t")
   
   rng =
     replicate_data(
@@ -115,47 +125,79 @@ sccomp_predict.sccomp_tbl = function(fit,
     # Determine which column name to use for central tendency
     central_tendency_col = if(robust) "median" else "mean"
     
-    prediction_df = 
-      rng |>
-      summary_to_tibble("mu", "M", "N", robust = robust) |>
-      select(M, N, 
-             
-             # This is not great, consider making proportion_mean more general such as proportion_point_estimate
-             proportion_mean = !!as.symbol(central_tendency_col), 
-             proportion_lower = `2.5%`, 
-             proportion_upper = `97.5%`) 
-    
-    # Extract unconstrained predictors (before softmax)
-    mu_unconstrained_df =
-      rng |>
-      summary_to_tibble("mu_unconstrained", "M", "N", robust = robust) |>
-      select(M, N, 
-             unconstrained_mean = !!as.symbol(central_tendency_col),
-             unconstrained_lower = `2.5%`,
-             unconstrained_upper = `97.5%`)
-    
-    # Join unconstrained predictors
-    prediction_df = 
-      prediction_df |>
-      left_join(mu_unconstrained_df, by = c("M", "N"))
+    if (is_student_t) {
+      prediction_df =
+        rng |>
+        summary_to_tibble("mu", "M", "N", robust = robust) |>
+        select(
+          M, N,
+          location_mean = !!as.symbol(central_tendency_col),
+          location_lower = `2.5%`,
+          location_upper = `97.5%`
+        ) |>
+        left_join(
+          rng |>
+            summary_to_tibble("y_rep", "N", "M", robust = robust) |>
+            select(
+              M, N,
+              value_mean = !!as.symbol(central_tendency_col),
+              value_lower = `2.5%`,
+              value_upper = `97.5%`
+            ),
+          by = c("M", "N")
+        )
+    } else {
+      prediction_df =
+        rng |>
+        summary_to_tibble("mu", "M", "N", robust = robust) |>
+        select(
+          M, N,
+          proportion_mean = !!as.symbol(central_tendency_col),
+          proportion_lower = `2.5%`,
+          proportion_upper = `97.5%`
+        )
+
+      mu_unconstrained_df =
+        rng |>
+        summary_to_tibble("mu_unconstrained", "M", "N", robust = robust) |>
+        select(
+          M, N,
+          unconstrained_mean = !!as.symbol(central_tendency_col),
+          unconstrained_lower = `2.5%`,
+          unconstrained_upper = `97.5%`
+        )
+
+      prediction_df = prediction_df |>
+        left_join(mu_unconstrained_df, by = c("M", "N"))
+    }
   }
 
   else {
-    prediction_df = 
-    rng |>
-    draws_to_tibble_x_y("mu", "M", "N") |> 
-    select(M, N, proportion = .value, .draw) 
-    
-    # Extract unconstrained predictors (before softmax)
-    mu_unconstrained_df =
-      rng |>
-      draws_to_tibble_x_y("mu_unconstrained", "M", "N") |>
-      select(M, N, unconstrained = .value, .draw)
-    
-    # Join unconstrained predictors
-    prediction_df = 
-      prediction_df |>
-      left_join(mu_unconstrained_df, by = c("M", "N", ".draw"))
+    if (is_student_t) {
+      prediction_df =
+        rng |>
+        draws_to_tibble_x_y("mu", "M", "N") |>
+        select(M, N, location = .value, .draw) |>
+        left_join(
+          rng |>
+            draws_to_tibble_x_y("y_rep", "N", "M") |>
+            select(M, N, value = .value, .draw),
+          by = c("M", "N", ".draw")
+        )
+    } else {
+      prediction_df =
+        rng |>
+        draws_to_tibble_x_y("mu", "M", "N") |>
+        select(M, N, proportion = .value, .draw)
+
+      mu_unconstrained_df =
+        rng |>
+        draws_to_tibble_x_y("mu_unconstrained", "M", "N") |>
+        select(M, N, unconstrained = .value, .draw)
+
+      prediction_df = prediction_df |>
+        left_join(mu_unconstrained_df, by = c("M", "N", ".draw"))
+    }
   } 
   
   prediction_df = 

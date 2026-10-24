@@ -43,18 +43,28 @@ fit_model = function(
   
   # chains = 3
 
+  alpha_intercept_init <- if (identical(model_name, "glm_multi_student_t")) 0 else 5
   init_list = list(
-    alpha = matrix(c(rep(5, data_for_model$M),
+    alpha = matrix(c(rep(alpha_intercept_init, data_for_model$M),
                      rep(0, (data_for_model$A - 1) * data_for_model$M)),
                    nrow = data_for_model$A, byrow = TRUE),
-    beta_raw = matrix(0, data_for_model$C, data_for_model$M),
-    log_prec_sd = rep(0, data_for_model$A),
+    log_prec_sd = rep(0, data_for_model$A) |> as.array(),
     mix_p = 0.5
   )
+  if (identical(model_name, "glm_multi_student_t")) {
+    init_list$beta = matrix(0, data_for_model$C, data_for_model$M)
+  } else {
+    init_list$beta_raw = matrix(0, data_for_model$C, data_for_model$M)
+  }
 
   has_variability_intercept <- isTRUE(as.logical(data_for_model$intercept_in_design))
   bimodal <- data_for_model$bimodal_mean_variability_association == 1L
-  intercept_init <- if (bimodal) c(4, 5) else c(4)
+  variability_intercept_init <- if (identical(model_name, "glm_multi_student_t")) 0 else 4
+  intercept_init <- if (bimodal) {
+    c(variability_intercept_init, variability_intercept_init + 1)
+  } else {
+    c(variability_intercept_init)
+  }
   non_intercept_init <- if (bimodal) c(0, 1) else c(0)
 
   init_list$prec_intercept <-
@@ -64,9 +74,9 @@ fit_model = function(
       rep(list(intercept_init), data_for_model$A)
     }
 
-  init_list$prec_slope_1 = rep(0, data_for_model$A)
+  init_list$prec_slope_1 = rep(0, data_for_model$A) |> as.array()
   if (bimodal) {
-    init_list$prec_slope_2 = rep(0, data_for_model$A)
+    init_list$prec_slope_2 = rep(0, data_for_model$A) |> as.array()
   }
 
   # Random effect inits - 4 uniform slots (one per non-empty random-effect block).
@@ -155,17 +165,6 @@ fit_model = function(
   
   
   
-}
-
-get_model_from_data = function(file_compiled_model, model_code){
-  if(file.exists(file_compiled_model))
-    readRDS(file_compiled_model)
-  else {
-    model_generate = stan_model(model_code = model_code)
-    model_generate  %>% saveRDS(file_compiled_model)
-    model_generate
-    
-  }
 }
 
 #' Load, Compile, and Cache a Stan Model

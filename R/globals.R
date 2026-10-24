@@ -1,0 +1,20 @@
+utils::globalVariables(c(
+  ".", ".chain", ".draw", ".exposure", ".iteration", ".lower", ".upper",
+  ".value", ".variable", "2.5%", "5%", "50%", "95%", "97.5%", "M", "N",
+  "adjusted_counts", "adjusted_proportion", "average_uncertainty",
+  "cell_group", "columns", "contains_outliers", "data___", "design",
+  "design_matrix", "design_matrix_col",
+  "difference_proportion_lower_fold_change",
+  "difference_proportion_upper_fold_change", "dummy", "effect", "exposure",
+  "factor_name", "factor_value", "factor_values", "fraction_contribution",
+  "group___label", "group___numeric", "is_proportion", "is_zero",
+  "location_mean", "lower", "lower_quantile", "n___", "n_unique_values",
+  "name", "observed_proportion", "observed_proportion_safe",
+  "observed_unconstrained", "outlier", "parameter", "parameters_name",
+  "pct", "pred_comp1", "pred_comp2", "proportion", "proportion_fold_change",
+  "proportion_mean", "qcol", "ratio_lower", "ratio_mean", "ratio_upper",
+  "raw_v_comp1", "raw_v_comp2", "residuals_unconstrained", "slope_to_use",
+  "statement", "truncation_down", "truncation_up", "unconstrained_mean",
+  "upper", "upper_quantile", "v_effect", "v_lower", "v_upper", "value",
+  "variable", "y_proportion", "y_var"
+))

@@ -1,7 +1,9 @@
 #' Calculate Residuals Between Observed and Predicted Proportions
 #'
 #' @description
-#' `sccomp_calculate_residuals` computes the residuals between observed cell group proportions and the predicted proportions from a fitted `sccomp` model. This function is useful for assessing model fit and identifying cell groups or samples where the model may not adequately capture the observed data. The residuals are calculated as the difference between the observed proportions and the predicted mean proportions from the model.
+#' `sccomp_calculate_residuals` computes observed-minus-fitted residuals. For
+#' compositional fits these are returned on proportion and unconstrained scales;
+#' for Student-t fits they are returned on the input continuous-value scale.
 #'
 #' @param .data A tibble of class `sccomp_tbl`, which is the result of `sccomp_estimate()`. This tibble contains the fitted model and associated data necessary for calculating residuals.
 #'
@@ -79,6 +81,28 @@ sccomp_calculate_residuals.sccomp_tbl = function(.data){
   .cell_group = attr(.data, ".cell_group")
   .grouping_for_random_intercept = attr(.data, ".grouping_for_random_intercept")
   .count = attr(.data, ".count")
+
+  if (identical(attr(.data, "noise_model"), "student_t")) {
+    fitted_location =
+      .data |>
+      sccomp_predict(
+        number_of_draws = .data |> attr("fit") |> dim() |> _[1] |> min(500)
+      ) |>
+      select(!!.sample, !!.cell_group, location_mean) |>
+      distinct()
+
+    return(
+      .data |>
+        attr("count_data") |>
+        distinct() |>
+        left_join(
+          fitted_location,
+          by = c(quo_name(.sample), quo_name(.cell_group))
+        ) |>
+        mutate(residuals = !!.count - location_mean) |>
+        select(!!.sample, !!.cell_group, residuals)
+    )
+  }
   
   # Residuals
   residual = 

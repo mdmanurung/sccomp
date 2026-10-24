@@ -20,7 +20,9 @@ A tibble (\code{tbl}) with the following columns:
 }
 }
 \description{
-\code{sccomp_calculate_residuals} computes the residuals between observed cell group proportions and the predicted proportions from a fitted \code{sccomp} model. This function is useful for assessing model fit and identifying cell groups or samples where the model may not adequately capture the observed data. The residuals are calculated as the difference between the observed proportions and the predicted mean proportions from the model.
+\code{sccomp_calculate_residuals} computes observed-minus-fitted residuals. For
+compositional fits these are returned on proportion and unconstrained scales;
+for Student-t fits they are returned on the input continuous-value scale.
 }
 \details{
 The function performs the following steps:

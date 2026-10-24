@@ -13,7 +13,8 @@ Depends:
     instantiate (>= 0.2.3)
 Imports:
     stats,
-    boot,
+    tools,
+    methods,
     utils,
     scales,
     lifecycle,
@@ -21,8 +22,6 @@ Imports:
     tidyselect,
     magrittr,
     crayon,
-    cli,
-    fansi,
     dplyr,
     tidyr,
     purrr,
@@ -38,6 +37,7 @@ Imports:
     SingleCellExperiment,
     posterior
 Suggests:
+    cmdstanr (>= 0.9.0),
     mgcv,
     knitr,
     rmarkdown,
@@ -53,7 +53,8 @@ Suggests:
     remotes
 Additional_repositories:
     https://mc-stan.org/r-packages/
-SystemRequirements: CmdStan (https://mc-stan.org/users/interfaces/cmdstan), C++14
+SystemRequirements: CmdStan (https://mc-stan.org/users/interfaces/cmdstan),
+    C++17 for the validated CmdStan 2.39.0 toolchain
 biocViews: Bayesian, Regression, DifferentialExpression, SingleCell, Metagenomics, FlowCytometry, Spatial
 LazyData: true
 VignetteBuilder: knitr
@@ -63,4 +64,4 @@ Config/testthat/edition: 3
 Config/testthat/parallel: false
 Config/testthat/snapshot/parallel: false
 Config/testthat/snapshot/parallel/workers: 2
-Config/roxygen2/version: 8.0.0
+Config/roxygen2/version: 8.1.0

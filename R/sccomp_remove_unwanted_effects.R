@@ -44,6 +44,9 @@ sccomp_remove_unwanted_effects <- function(.data,
                                            formula_composition_keep = NULL,
                                            formula_composition = NULL,
                                            cores = detectCores()) {
+  if (inherits(.data, "sccomp_continuous_tbl")) {
+    stop("Removing unwanted effects is unavailable for continuous fits.", call. = FALSE)
+  }
   # Check for deprecated arguments
   if (!is.null(formula_composition)) {
     warning("The argument 'formula_composition' is deprecated. Please use 'formula_composition_keep' instead.", call. = FALSE)

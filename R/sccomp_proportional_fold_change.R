@@ -188,6 +188,13 @@ match_interaction_parts_to_factors <- function(parts, factors, data) {
 #' @importFrom stringr str_split
 #' 
 sccomp_proportional_fold_change.sccomp_tbl = function(.data, formula_composition, from, to){
+
+  if (identical(attr(.data, "noise_model"), "student_t")) {
+    stop(
+      "sccomp says: proportional fold change is defined only for compositional fits. Student-t `c_effect` values are already on the input abundance scale.",
+      call. = FALSE
+    )
+  }
   
   my_factors = parse_formula(formula_composition)
   
@@ -318,5 +325,4 @@ sccomp_proportional_fold_change.sccomp_tbl = function(.data, formula_composition
 
 #' @references
 #' S. Mangiola, A.J. Roth-Schulze, M. Trussart, E. Zozaya-Valdés, M. Ma, Z. Gao, A.F. Rubin, T.P. Speed, H. Shim, & A.T. Papenfuss, sccomp: Robust differential composition and variability analysis for single-cell data, Proc. Natl. Acad. Sci. U.S.A. 120 (33) e2203828120, https://doi.org/10.1073/pnas.2203828120 (2023).
-
 

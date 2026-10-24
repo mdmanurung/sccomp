@@ -10,7 +10,8 @@ sccomp_replicate(
   formula_variability = NULL,
   number_of_draws = 1,
   mcmc_seed = sample_seed(),
-  cache_stan_model = sccomp_stan_models_cache_dir
+  cache_stan_model = sccomp_stan_models_cache_dir,
+  ...
 )
 }
 \arguments{
@@ -24,7 +25,10 @@ sccomp_replicate(
 
 \item{mcmc_seed}{An integer. Used for Markov-chain Monte Carlo reproducibility. By default a random number is sampled from 1 to 999999. This itself can be controlled by set.seed()}
 
-\item{cache_stan_model}{A character string specifying the cache directory for compiled Stan models.
+\item{cache_stan_model}{A character string specifying the cache directory for compiled Stan models.}
+
+\item{...}{Continuous-method arguments: \code{formula_location}, \code{formula_variance}
+and sample-wise \code{new_data}.
 The sccomp version will be automatically appended to ensure version isolation.
 Default is \code{sccomp_stan_models_cache_dir} which points to \verb{~/.sccomp_models}.}
 }

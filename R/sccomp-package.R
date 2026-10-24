@@ -1,4 +1,7 @@
 #' @keywords internal
+#' @importFrom methods is
+#' @importFrom stats formula na.omit pf residuals setNames
+#' @importFrom utils capture.output install.packages packageVersion tail
 "_PACKAGE"
 
 #' sccomp: Differential Composition and Variability Analysis for Single-Cell Data
